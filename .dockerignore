@@ -1,0 +1,7 @@
+# 只把程式放進映像;金鑰、狀態、快取一律不進去
+*
+!bot/
+!main.py
+!cloud_run.py
+!requirements-cloud.txt
+**/__pycache__

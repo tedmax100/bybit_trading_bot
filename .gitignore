@@ -1,0 +1,50 @@
+# 敏感金鑰、私鑰與憑證 (絕對不可上傳 GitHub)
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+*.id_rsa
+*credentials*.json
+*service-account*.json
+sa-key*.json
+secrets/
+
+# 環境變數與設定 (敏感 API Key / Secret)
+.env
+.env.*
+!.env.example
+
+# 交易資料庫與本機快取 (包含實盤權益與持倉)
+*.db
+*.db-journal
+*.db-wal
+*.sqlite
+*.sqlite3
+data/
+*.pkl
+
+# Python 虛擬環境與編譯快取
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 編輯器與輔助工具暫存
+.vscode/
+.idea/
+.claude/
+.agents/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 靜態構建輸出 (GitHub Pages 部署包由 Action 獨立上傳，不需要污染 git 歷史)
+site/

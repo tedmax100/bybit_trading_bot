@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 420" width="100%" height="100%">
+  <defs>
+    <linearGradient id="botGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0.0"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="850" height="420" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+
+  <!-- 標題與 KPI 摘要 -->
+  <text x="75" y="32" fill="#f0f6fc" font-size="16" font-weight="600" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">機器人累積報酬率 vs BTC 基準</text>
+  
+  <text x="810" y="32" text-anchor="end" font-size="13" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+    <tspan fill="#8b949e">目前權益: </tspan>
+    <tspan fill="#f0f6fc" font-weight="bold">390.95 USDT</tspan>
+    <tspan fill="#8b949e"> | 報酬: </tspan>
+    <tspan fill="#10b981" font-weight="bold">+2.53%</tspan>
+    <tspan fill="#8b949e"> (超額: </tspan>
+    <tspan fill="#38bdf8" font-weight="bold">+19.28%</tspan><tspan fill="#8b949e">)</tspan>
+  </text>
+
+  <!-- 刻度與網格 -->
+  
+        <line x1="75" y1="360.0" x2="810" y2="360.0" stroke="#30363d" stroke-dasharray="3,3" stroke-width="1"/>
+        <text x="65" y="364.0" fill="#8b949e" font-size="11" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">-23.1%</text>
+        
+        <line x1="75" y1="285.0" x2="810" y2="285.0" stroke="#30363d" stroke-dasharray="3,3" stroke-width="1"/>
+        <text x="65" y="289.0" fill="#8b949e" font-size="11" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">-15.9%</text>
+        
+        <line x1="75" y1="210.0" x2="810" y2="210.0" stroke="#30363d" stroke-dasharray="3,3" stroke-width="1"/>
+        <text x="65" y="214.0" fill="#8b949e" font-size="11" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">-8.6%</text>
+        
+        <line x1="75" y1="135.0" x2="810" y2="135.0" stroke="#30363d" stroke-dasharray="3,3" stroke-width="1"/>
+        <text x="65" y="139.0" fill="#8b949e" font-size="11" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">-1.4%</text>
+        
+        <line x1="75" y1="60.0" x2="810" y2="60.0" stroke="#30363d" stroke-dasharray="3,3" stroke-width="1"/>
+        <text x="65" y="64.0" fill="#8b949e" font-size="11" text-anchor="end" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">+5.8%</text>
+        
+  
+  <!-- 0% 基準線 -->
+  <line x1="75" y1="120.5" x2="810" y2="120.5" stroke="#6e7681" stroke-width="1.2"/>
+
+  <!-- BTC 基準曲線 -->
+  <polyline fill="none" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="4,4" points="75.0,120.5 131.5,121.5 188.1,136.2 244.6,154.4 301.2,195.7 357.7,256.4 414.2,240.8 470.8,247.4 527.3,274.9 583.8,283.2 640.4,335.0 696.9,308.0 753.5,303.3 810.0,293.9" opacity="0.85"/>
+
+  <!-- 機器人面積與折線 -->
+  <polygon fill="url(#botGrad)" points="75.0,120.5 75.0,120.5 131.5,120.7 188.1,122.9 244.6,123.9 301.2,114.3 357.7,102.8 414.2,106.7 470.8,105.5 527.3,100.7 583.8,99.2 640.4,85.0 696.9,92.3 753.5,94.2 810.0,94.3 810.0,120.5"/>
+  <polyline fill="none" stroke="#10b981" stroke-width="2.5" points="75.0,120.5 131.5,120.7 188.1,122.9 244.6,123.9 301.2,114.3 357.7,102.8 414.2,106.7 470.8,105.5 527.3,100.7 583.8,99.2 640.4,85.0 696.9,92.3 753.5,94.2 810.0,94.3" filter="url(#glow)"/>
+
+  <!-- X 軸標籤 -->
+  
+        <text x="75.0" y="382" fill="#8b949e" font-size="11" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">2026-11-10</text>
+        
+        <text x="810.0" y="382" fill="#8b949e" font-size="11" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">2026-11-23</text>
+        
+        <text x="470.8" y="382" fill="#8b949e" font-size="11" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">2026-11-17</text>
+        
+
+  <!-- 圖例 (Legend) -->
+  <g transform="translate(75, 400)">
+    <!-- 機器人 -->
+    <line x1="0" y1="-4" x2="18" y2="-4" stroke="#10b981" stroke-width="3"/>
+    <text x="24" y="0" fill="#f0f6fc" font-size="11" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">實盤策略 (+2.53%)</text>
+    
+    <!-- BTC 基準 -->
+    <line x1="150" y1="-4" x2="168" y2="-4" stroke="#f59e0b" stroke-width="2" stroke-dasharray="3,3"/>
+    <text x="174" y="0" fill="#8b949e" font-size="11" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif">BTC 持有基準 (-16.75%)</text>
+  </g>
+</svg>

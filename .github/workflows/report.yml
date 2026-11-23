@@ -1,0 +1,92 @@
+name: Daily Performance Report & Dashboard
+
+on:
+  schedule:
+    # 每天 UTC 00:30 執行 (在每日 00:10 的決策運行後自動更新)
+    - cron: '30 0 * * *'
+    # 若希望每 4 小時同步一次，可改為: '30 */4 * * *'
+  workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵點擊執行
+
+# 設定權限以允許部署 GitHub Pages 與更新 README
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# 避免多個工作同時部署 GitHub Pages 發生衝突
+concurrency:
+  group: 'pages'
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 檢出儲存庫代碼 (Checkout)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 設定 Python 環境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 建立暫存資料目錄
+        run: mkdir -p data assets site
+
+      - name: 認證 Google Cloud (讀取狀態檔)
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: 安裝 Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: 下載最新機器人狀態資料庫 (GCS -> Runner)
+        run: |
+          echo "從 GCS 下載 live.db 與 bot.db..."
+          gcloud storage cp gs://bybit-bot-909483-bybit-bot-state/live.db data/live.db || true
+          gcloud storage cp gs://bybit-bot-909483-bybit-bot-state/bot.db data/bot.db || true
+
+      - name: 產生圖表、HTML 儀表板與更新 README
+        run: |
+          GH_PAGES_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+          python3 scripts/generate_dashboard.py \
+            --live-db data/live.db \
+            --bot-db data/bot.db \
+            --svg-out assets/equity_curve.svg \
+            --html-out site/index.html \
+            --readme README.md \
+            --gh-url "$GH_PAGES_URL"
+
+      - name: 設定 GitHub Pages 部署構建檔
+        uses: actions/configure-pages@v5
+
+      - name: 上傳 GitHub Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'site'
+
+      - name: 部署至 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: 提交更新後的 README 與 SVG 圖表至儲存庫
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 只加入 assets 與 README.md，絕對不碰 data 或私鑰
+          git add assets/equity_curve.svg README.md
+          
+          if git diff --staged --quiet; then
+            echo "無內容變更，無需提交"
+          else
+            git commit -m "chore(report): auto-update performance dashboard [skip ci]"
+            git push origin ${{ github.ref_name }}
+          fi
