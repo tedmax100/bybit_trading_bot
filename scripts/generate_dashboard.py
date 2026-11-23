@@ -13,6 +13,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -571,6 +572,78 @@ def generate_html(live_data, bot_data, output_path: str):
         f.write(html_content.strip())
 
 
+def extract_recent_logs(data, days=7):
+    """提取最近 N 天的現貨與永續買賣調倉紀錄 (依時間由新到舊排序)"""
+    if not data:
+        return []
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cut_date = (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+    events = []
+
+    # 1. 現貨買賣/調倉紀錄 (來自 snapshots)
+    for r in data.get("records", []):
+        day = r["day"]
+        if day >= cut_date and r.get("actions"):
+            for act in r["actions"]:
+                if not act or act == "-":
+                    continue
+                sym = "BTC/ETH"
+                for s in ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LINKUSDT", "XRPUSDT", "AAVEUSDT"]:
+                    if s in act:
+                        sym = s
+                        break
+                events.append({
+                    "time": f"`{day}`",
+                    "market": "現貨策略",
+                    "sym": f"`{sym}`",
+                    "action": act,
+                    "amount_pnl": "-",
+                    "reason": "動態趨勢與均線訊號調倉",
+                })
+
+    # 2. 永續短線買賣紀錄 (來自 psleeve log)
+    for l in data.get("perp", {}).get("log", []):
+        parts = l.split()
+        if len(parts) >= 2:
+            d_str = parts[0]
+            if d_str >= cut_date:
+                t_str = f"`{parts[0]} {parts[1]}`"
+                m = re.match(
+                    r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s+永續(開空|開多|平倉)\s+(\w+)\s+(.*?)(?:\s+損益\s+([+\-0-9.]+))?(?:\s+名目\s+([0-9.]+))?\s*\((.*)\)',
+                    l,
+                )
+                if m:
+                    _, act, sym, detail, pnl, notional, reason = m.groups()
+                    if act == "平倉":
+                        act_str = f"平倉 {detail}"
+                        amt_pnl = f"**`{pnl} USDT`**" if pnl else "-"
+                    else:
+                        act_str = f"{act} {detail}"
+                        amt_pnl = f"`{notional} USDT`" if notional else "-"
+                    events.append({
+                        "time": t_str,
+                        "market": "永續短線",
+                        "sym": f"`{sym}`",
+                        "action": act_str,
+                        "amount_pnl": amt_pnl,
+                        "reason": reason,
+                    })
+                else:
+                    events.append({
+                        "time": t_str,
+                        "market": "永續短線",
+                        "sym": f"`{parts[3]}`" if len(parts) > 3 else "Perp",
+                        "action": " ".join(parts[2:]),
+                        "amount_pnl": "-",
+                        "reason": "-",
+                    })
+
+    # 由新到舊排序 (去除 ` 符號輔助排序)
+    events.sort(key=lambda x: x["time"].replace("`", ""), reverse=True)
+    return events
+
+
 def update_readme(data, readme_path: str = "README.md", gh_page_url: str = ""):
     """自動更新 README.md 中的績效摘要與圖表"""
     if not os.path.exists(readme_path) or not data:
@@ -583,6 +656,28 @@ def update_readme(data, readme_path: str = "README.md", gh_page_url: str = ""):
     end_tag = "<!-- BOT_DASHBOARD_END -->"
 
     gh_page_link = f"[👉 點此開啟即時互動儀表板 (GitHub Pages)]({gh_page_url})" if gh_page_url else ""
+
+    # 產出近 7 日操作日誌表格
+    recent_logs = extract_recent_logs(data, days=7)
+    if recent_logs:
+        log_rows = []
+        for log in recent_logs:
+            log_rows.append(
+                f"| {log['time']} | {log['market']} | {log['sym']} | {log['action']} | {log['amount_pnl']} | {log['reason']} |"
+            )
+        log_table_md = "\n".join([
+            "### 📝 近 7 日交易與調倉日誌",
+            "",
+            "| 時間 (UTC) | 市場 | 標的 | 交易動作 | 損益 / 名目額 | 觸發原因 |",
+            "| :--- | :---: | :---: | :--- | :---: | :--- |",
+            *log_rows,
+        ])
+    else:
+        log_table_md = "\n".join([
+            "### 📝 近 7 日交易與調倉日誌",
+            "",
+            "*近 7 日無買賣操作，維持既有配置或空手觀望。*",
+        ])
 
     dashboard_md = f"""{start_tag}
 ## 📊 機器人實盤績效走勢
@@ -599,6 +694,8 @@ def update_readme(data, readme_path: str = "README.md", gh_page_url: str = ""):
 | **超額報酬 (Alpha)**| **`{data['alpha']:+.2f}%`** | 策略相對於 BTC 的超額增益 |
 | **歷史最大回撤** | **`{data['max_dd']:.2f}%`** | 運行期間內資產自高點最大拉回幅度 |
 | **永續短線 (4H)** | **勝率 `{data['perp']['winrate']:.0f}%` / 已實現 `{data['perp']['realized']:+.2f} USDT`** | {data['perp']['trades']} 戰 {data['perp']['wins']} 勝，爆倉 0 次 |
+
+{log_table_md}
 
 *最後自動更新時間：`{datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}`*
 {end_tag}"""
