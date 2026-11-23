@@ -3,7 +3,7 @@
 <!-- BOT_DASHBOARD_START -->
 ## 📊 機器人實盤績效走勢
 
-
+[👉 點此開啟即時互動儀表板 (GitHub Pages)](https://tedmax100.github.io/bybit_trading_bot/)
 
 ![實盤權益走勢](assets/equity_curve.svg)
 
@@ -16,7 +16,7 @@
 | **歷史最大回撤** | **`-0.87%`** | 運行期間內資產自高點最大拉回幅度 |
 | **永續短線 (4H)** | **勝率 `100%` / 已實現 `+13.55 USDT`** | 4 戰 4 勝，爆倉 0 次 |
 
-*最後自動更新時間：`2026-11-23 13:10 UTC`*
+*最後自動更新時間：`2026-11-23 13:17 UTC`*
 <!-- BOT_DASHBOARD_END -->
 
 
