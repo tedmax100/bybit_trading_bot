@@ -179,3 +179,39 @@ def test_recorded_equity_and_perf_include_perp_sleeve_pnl(tmp_path):
     assert "+19.00" in perf(db, lambda s: 90.0, today="2026-01-02").splitlines()[3]
     con.execute("UPDATE kv SET v='\"live\"' WHERE k='mode'"); con.commit()            # 實盤:已實現已在錢包餘額裡,只加未實現
     assert "+20.00" in perf(db, lambda s: 90.0, today="2026-01-02").splitlines()[3]
+
+
+def _h4(n=200 * 6 + 10, step=0.0008):
+    c = 100.0 * np.cumprod(np.full(n, 1 + step))
+    idx = pd.date_range("2025-01-01", periods=n, freq="4h", tz="UTC")
+    return pd.DataFrame({"open": c, "high": c, "low": c, "close": c}, index=idx)
+
+
+def test_shadow_uses_day_based_params_on_4h_bars():
+    from bot.runner import _ma_on, _trend_w
+    up = _h4()
+    assert _ma_on(up) == 1.0 and _trend_w(up) == pytest.approx(1.0)
+    # 最後 40 天轉跌:200 根 4H (約 33 天) 的均線會翻空,但 200 日均線/長期動能仍多頭 -> 不能歸零
+    c = up["close"].to_numpy().copy()
+    c[-240:] = c[-241] * np.cumprod(np.full(240, 1 - 0.0006))
+    mixed = up.assign(close=c)
+    assert _ma_on(mixed) == 1.0
+    assert 0 < _trend_w(mixed) < 1.0
+    short = _h4(100)                                        # 資料不足 200 天 -> NaN,不是假訊號
+    assert _trend_w(short) != _trend_w(short)
+
+
+def test_stale_shadow_records_are_archived_and_restarted(tmp_path):
+    import json, sqlite3
+    db = str(tmp_path / "v.db")
+    run_once(db, lambda s: df(0.004), lambda s: 100.0, **NO_FA, day="2026-01-01")
+    con = sqlite3.connect(db)
+    con.execute("DELETE FROM kv WHERE k='shadow_ver'")
+    con.execute("UPDATE kv SET v=? WHERE k='shadow_pf'", (json.dumps({"舊": {"idx": 50.0, "w": {}, "last": {}, "turn": 9.0, "days": 99}}),))
+    con.commit()
+    r = run_once(db, lambda s: df(0.004), lambda s: 100.0, **NO_FA, day="2026-01-02")
+    assert _kv(db, "shadow_pf_v1_invalid")["舊"]["idx"] == 50.0
+    assert "舊" not in r["shadow_pf"] and all(v["idx"] > 99 for v in r["shadow_pf"].values())
+    assert all(v["since"] == "2026-01-02" for v in _kv(db, "shadow_pf").values())
+    rep = __import__("bot.runner", fromlist=["report"]).report(db)
+    assert "自 2026-01-02 起" in rep

@@ -34,11 +34,33 @@ SHADOW = ["SOLUSDT", "LINKUSDT", "AAVEUSDT", "XRPUSDT"]   # 觀察模式:只記�
 # 觀察組合:整份虛擬資金 (起算 100) 依目標權重配置,用來並排比較「舊的均線策略」與現行的動態策略 (D)
 SHADOW_MIX = {"BTCUSDT": 0.7, "ETHUSDT": 0.3}
 SHADOW_PF_RENAMED = {"現行 均線(BTC70/ETH30)": "舊 均線(BTC70/ETH30)"}   # 舊名稱 -> 新名稱;沿用已累積的紀錄
+
+
+def _bars_per_day(df: pd.DataFrame) -> int:
+    """日線 -> 1,4 小時線 -> 6。觀察用的參數都以「天」為單位,要乘上這個數才對得上 K 線根數。"""
+    if len(df) < 2:
+        return 1
+    return 6 if (df.index[-1] - df.index[-2]).total_seconds() / 3600 < 12 else 1
+
+
+def _ma_on(df: pd.DataFrame, days: int = 200) -> float:
+    return float(MAFilter(days * _bars_per_day(df)).positions(df).iloc[-1])
+
+
+def _trend_w(df: pd.DataFrame) -> float:
+    k = _bars_per_day(df)
+    return float(trend_vol(df["close"], n=30 * k, ppy=365 * k, mas=(50 * k, 100 * k, 200 * k),
+                           moms=(30 * k, 90 * k, 180 * k)).iloc[-1])
+
+
 SHADOW_PF = {
-    "舊 均線(BTC70/ETH30)": lambda df: float(MAFilter(200).positions(df).iloc[-1]),
-    "D 趨勢分數+波動目標(BTC70/ETH30)": lambda df: float(trend_vol(df["close"]).iloc[-1]),
-    "D 同上,調整門檻20%": lambda df: float(trend_vol(df["close"]).iloc[-1]),
+    "舊 均線(BTC70/ETH30)": _ma_on,
+    "D 趨勢分數+波動目標(BTC70/ETH30)": _trend_w,
+    "D 同上,調整門檻20%": _trend_w,
 }
+# 觀察紀錄的版本。2026-11-27 前,K 線改成 4 小時後觀察仍用日線參數 (200 根 = 33 天、波動年化用 365),
+# 紀錄無效 -> 版本不符時把舊紀錄搬到 <key>_v<舊版>_invalid 保留,從 100 重新起算。
+SHADOW_VER = 2
 SHADOW_PF_BAND = {"D 同上,調整門檻20%": 0.20}        # 個別組合的調整門檻 (沒列的用 SHADOW_BAND)
 SHADOW_PF_FORK = {"D 同上,調整門檻20%": "D 趨勢分數+波動目標(BTC70/ETH30)"}   # 新組合從既有組合當下的狀態分叉,之後的差異只來自門檻
 SLEEVE_BAND = float(os.getenv("SLEEVE_BAND", "0.05"))   # 目標與現值差距小於額度的此比例不調整 (預設 5%;4H 決策建議 0.20,回測用 20%)
@@ -295,24 +317,37 @@ def run_once(db_path: str = SETTINGS.db_path, daily_fn: Callable = _daily_df, pr
     db.execute("INSERT OR REPLACE INTO snapshots VALUES(?,?,?,?,?,?,?,?)",
                (day, equity, paper.cash, json.dumps(paper.holdings()), json.dumps(all_actions, ensure_ascii=False),
                 json.dumps(signals), int(budget.get(day)["halted"]), price_fn("BTCUSDT")))
-    shadow = _update_shadow(db, daily_fn, price_fn)
-    shadow_pf = _update_shadow_pf(db, daily_fn, price_fn)
+    _reset_shadow_if_stale(db)
+    shadow = _update_shadow(db, daily_fn, price_fn, day)
+    shadow_pf = _update_shadow_pf(db, daily_fn, price_fn, day)
     _kv_set(db, "last_run_day", day)
     _kv_set(db, "last_run_slot", slot)
     return {"mode": mode, "shadow": shadow, "shadow_pf": shadow_pf, "day": day, "slot": slot, "equity": equity, "allowance": b["allowance"], "signals": signals, "actions": actions,
             "halted": bool(budget.get(day)["halted"])}
 
 
-def _update_shadow(db, daily_fn, price_fn) -> dict:
+def _reset_shadow_if_stale(db) -> None:
+    ver = _kv_get(db, "shadow_ver", 1)
+    if ver == SHADOW_VER:
+        return
+    for key in ("shadow", "shadow_pf"):
+        old = _kv_get(db, key, None)
+        if old:
+            _kv_set(db, f"{key}_v{ver}_invalid", old)
+        db.execute("DELETE FROM kv WHERE k=?", (key,))
+    _kv_set(db, "shadow_ver", SHADOW_VER)
+
+
+def _update_shadow(db, daily_fn, price_fn, day: str | None = None) -> dict:
     sh = _kv_get(db, "shadow", {})
     for sym in SHADOW:
         try:
-            on = bool(MAFilter(200).positions(daily_fn(sym)).iloc[-1])
+            on = bool(_ma_on(daily_fn(sym)))
             p = price_fn(sym)
         except Exception as e:                      # 觀察用,任何一檔出錯都不能影響主流程
             sh.setdefault(sym, {})["error"] = str(e)[:80]
             continue
-        s = sh.get(sym) or {"idx": 100.0, "on": False, "last": p, "start": p}
+        s = sh.get(sym) or {"idx": 100.0, "on": False, "last": p, "start": p, "since": day}
         s.pop("error", None)
         if s["on"]:
             s["idx"] *= p / s["last"]               # 持有期間的報酬
@@ -324,7 +359,7 @@ def _update_shadow(db, daily_fn, price_fn) -> dict:
     return {k: {"on": v.get("on"), "idx": round(v.get("idx", 0), 2)} for k, v in sh.items()}
 
 
-def _update_shadow_pf(db, daily_fn, price_fn) -> dict:
+def _update_shadow_pf(db, daily_fn, price_fn, day: str | None = None) -> dict:
     """觀察組合:先用舊權重結算上次以來的報酬,再依最新日線算新目標權重 (扣換手成本)。"""
     pf = _kv_get(db, "shadow_pf", {})
     try:
@@ -343,7 +378,7 @@ def _update_shadow_pf(db, daily_fn, price_fn) -> dict:
             pf[name] = json.loads(json.dumps(pf[src]))
     for name, fn in SHADOW_PF.items():
         band = SHADOW_PF_BAND.get(name, SHADOW_BAND)
-        s = pf.get(name) or {"idx": 100.0, "w": {}, "last": px, "turn": 0.0, "days": 0}
+        s = pf.get(name) or {"idx": 100.0, "w": {}, "last": px, "turn": 0.0, "days": 0, "since": day}
         s["idx"] *= 1 + sum(w * (px[k] / s["last"][k] - 1) for k, w in s["w"].items())
         new = {}
         for k, mix in SHADOW_MIX.items():
@@ -357,6 +392,12 @@ def _update_shadow_pf(db, daily_fn, price_fn) -> dict:
         pf[name] = s
     _kv_set(db, "shadow_pf", pf)
     return {k: {"idx": round(v["idx"], 2), "w": {a: round(b, 3) for a, b in v["w"].items()}} for k, v in pf.items() if k != "error"}
+
+
+def _days_since(start: str | None, today: str) -> int | None:
+    if not start:
+        return None
+    return (pd.Timestamp(today) - pd.Timestamp(start[:10])).days + 1
 
 
 def report(db_path: str = SETTINGS.db_path) -> str:
@@ -382,7 +423,8 @@ def report(db_path: str = SETTINGS.db_path) -> str:
             out.append("  (目前無套利持倉)")
     sh = _kv_get(db, "shadow", {})
     if sh:
-        out += ["", "觀察模式 (不下單,虛擬績效;起算 100)", f"{'幣':8s} {'訊號':>4s} {'均線策略':>9s} {'直接持有':>9s}"]
+        since = next((v["since"] for v in sh.values() if v.get("since")), None)
+        out += ["", f"觀察模式 (不下單,虛擬績效;起算 100{f',自 {since} 起' if since else ''})", f"{'幣':8s} {'訊號':>4s} {'均線策略':>9s} {'直接持有':>9s}"]
         for sym, v in sh.items():
             if "idx" in v:
                 out.append(f"{sym:8s} {'持有' if v['on'] else '空手':>4s} {v['idx']/100-1:+9.2%} {v['last']/v['start']-1:+9.2%}")
@@ -390,14 +432,16 @@ def report(db_path: str = SETTINGS.db_path) -> str:
                 out.append(f"{sym:8s} 取得資料失敗: {v.get('error')}")
     pf = _kv_get(db, "shadow_pf", {})
     if pf:
-        out += ["", "觀察組合 (不下單;整份虛擬資金起算 100,同日起跑並排比較)",
+        since = next((v["since"] for k, v in pf.items() if k != "error" and v.get("since")), None)
+        out += ["", f"觀察組合 (不下單;整份虛擬資金起算 100,同日起跑並排比較{f',自 {since} 起' if since else ''})",
                 f"{'組合':30s} {'績效':>8s} {'BTC權重':>7s} {'ETH權重':>7s} {'累計換手':>8s} {'天數':>4s}"]
         if "error" in pf:
             out.append(f"  取得資料失敗: {pf['error']}")
         for name, v in pf.items():
             if name != "error":
                 w = v["w"]
-                out.append(f"{name:30s} {v['idx']/100-1:+8.2%} {w.get('BTCUSDT', 0):7.0%} {w.get('ETHUSDT', 0):7.0%} {v['turn']:8.2f} {v['days']:4d}")
+                days = _days_since(v.get("since"), rows[-1][0]) or v["days"]
+                out.append(f"{name:30s} {v['idx']/100-1:+8.2%} {w.get('BTCUSDT', 0):7.0%} {w.get('ETHUSDT', 0):7.0%} {v['turn']:8.2f} {days:4d}")
     from .perp_sleeve import summary
     out += summary(db)
     return "\n".join(out)
